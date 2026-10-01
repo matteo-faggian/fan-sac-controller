@@ -1,0 +1,17 @@
+# Ambiente virtuale Python: si ricrea con requirements.txt
+venv/
+.venv/
+
+# Cache generata da Python
+__pycache__/
+*.pyc
+
+# Pesi PyTorch (al momento vuoti / rigenerabili col training)
+models/*.pth
+
+# Run di TensorBoard
+runs/
+
+# Impostazioni personali dell'editor
+.vscode/
+.idea/
