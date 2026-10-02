@@ -28,7 +28,7 @@ where $T$ is the fan thrust, modelled with first-order rotor dynamics (time cons
 | `train.py`, `test.py`, `config.py` | Training / evaluation scripts and hyperparameters *(WIP)* |
 | `sac_fan.zip`, `best_sac_fan/best_model.zip` | Trained model checkpoints |
 | `logs/` | Evaluation logs |
-| `arduino/esc_manual_control/` | Arduino sketch: ESC calibration + manual throttle via serial (0–180) — tested on hardware |
+| `ARDUINO/esc_manual_control/` | Arduino sketch: ESC calibration + manual throttle via serial (0–180) — tested on hardware |
 
 ## Hardware
 
