@@ -1,17 +1,21 @@
-# Ambiente virtuale Python: si ricrea con requirements.txt
-venv/
-.venv/
-
-# Cache generata da Python
+# Python
 __pycache__/
 *.pyc
+.venv/
+venv/
 
-# Pesi PyTorch (al momento vuoti / rigenerabili col training)
-models/*.pth
+# Uscite di training (pesanti e rigenerabili)
+logs/
+best_sac_fan/
+sac_fan.zip
+learning_curve.png
+episodio_esempio.png
 
-# Run di TensorBoard
-runs/
+# Prove reali ancora da archiviare: spostale a mano in data/prove_reali/ con un nome descrittivo
+controller/prova_reale_*.csv
 
-# Impostazioni personali dell'editor
+# Sistema
 .vscode/
 .idea/
+Thumbs.db
+desktop.ini
