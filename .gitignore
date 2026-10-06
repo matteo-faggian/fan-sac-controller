@@ -19,3 +19,9 @@ controller/prova_reale_*.csv
 .idea/
 Thumbs.db
 desktop.ini
+
+# STM32: header generati da stm32/rete/esporta_actor.py e binari di test
+stm32/rete/actor_weights.h
+stm32/rete/test_vectors.h
+stm32/rete/test_pc
+stm32/rete/test_pc.exe

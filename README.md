@@ -45,13 +45,14 @@ con la storia dei comandi nell'osservazione, in simulazione riduce quell'oscilla
 tre volte (vedi [docs/04](docs/04_ambiente_e_training.md)).
 
 **Stato:** sysid ✅ · simulatore validato ✅ · policy E sul banco ✅ · policy F in simulazione ✅ ·
-policy F sul banco ⏳ · deploy su STM32 ⏳
+policy F sul banco ✅ · deploy su STM32 in corso ([docs/07](docs/07_deploy_stm32.md))
 
 ## Struttura
 
 | Cartella | Contenuto |
 |---|---|
 | `firmware/` | sketch Arduino: ponte PC ↔ ESC + HX711 |
+| `stm32/` | deploy su STM32F407: rete in C, firmware |
 | `sysid/` | acquisizione dati e analisi per la system identification |
 | `controller/` | ambiente Gymnasium, training, valutazione, controllo sul banco reale |
 | `data/` | dati grezzi: test sysid e prove reali |
@@ -66,6 +67,7 @@ policy F sul banco ⏳ · deploy su STM32 ⏳
 4. [Ambiente e training](docs/04_ambiente_e_training.md): osservazioni, azioni, reward, esperimenti A–F
 5. [Prove sul banco reale](docs/05_prove_sul_banco.md): come lanciare una prova in sicurezza
 6. [Lezioni imparate](docs/06_lezioni_imparate.md): problemi incontrati, diagnosi e soluzioni
+7. [Deploy su STM32](docs/07_deploy_stm32.md): rete in C, clock, USB, firmware (in corso)
 
 ## Avvio rapido
 
