@@ -1,5 +1,7 @@
 # 4. Ambiente e training
 
+> Versione estesa con le derivazioni (modello del rotore, discretizzazione esatta, teoria del SAC) e il codice commentato: [appunti in PDF](appunti/appunti_modello_training_sac.pdf).
+
 File: `controller/env_fan.py` (ambiente Gymnasium + training SAC con Stable-Baselines3).
 
 ## Il ciclo del RL in questo progetto

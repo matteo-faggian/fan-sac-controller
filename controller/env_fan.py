@@ -10,7 +10,7 @@ Novita' rispetto alla v1 (tutte da sysid_params.json, prodotto da analisi_sysid.
   - deadband con ISTERESI: il motore parte sopra u_avvio, si ferma sotto u_arresto
   - RITARDO DI AVVIO da fermo (~0.2 s): il motore deve sincronizzarsi prima di spingere
   - tau diverse: in moto (~78 ms) e in spegnimento (~174 ms, il rotore rallenta per inerzia)
-  - RITARDO DI ATTUAZIONE di 1-2 passi (misurato ~27 ms + tempo di calcolo sullo STM32)
+  - RITARDO DI ATTUAZIONE di n passi (vedi versione F: 1-4 passi in training, 3 nominale)
   - rumore proporzionale alla spinta (vibrazioni): sigma = s0 + s1*T
   - inclinazione massima 14 gradi e force_ref 1.15 N: compito fattibile con ~2.2 N di spinta
 
@@ -24,7 +24,7 @@ Versione F: il banco reale ha mostrato un ritardo d'anello di ~3 passi (~60 ms) 
     ancora "arrivati" fanno parte dello stato del sistema (proprieta' di Markov)
 
 SAC decide:
-    azione a in [-1, 1]  ->  c = (a+1)/2 in [0, 1]  ->  u = c * U_MAX  (scala del banco 0..40)
+    azione a in [-1, 1]  ->  c = c_min + (1-c_min)*(a+1)/2 in [c_min, 1]  ->  u = c * U_MAX  (scala 0..40)
 
 Sul banco: impulso ESC [us] = 1472 - u/40 * (1472 - 544)
 """

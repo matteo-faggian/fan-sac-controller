@@ -47,6 +47,16 @@ tre volte (vedi [docs/04](docs/04_ambiente_e_training.md)).
 **Stato:** sysid ✅ · simulatore validato ✅ · policy E sul banco ✅ · policy F in simulazione ✅ ·
 policy F sul banco ✅ · deploy su STM32 in corso ([docs/07](docs/07_deploy_stm32.md))
 
+## Dove si lavora
+
+Questa cartella (`J:\PYTHON\RL\fan-sac-controller`) è **l'unica copia viva** del progetto.
+
+- Il firmware STM32 si apre, si compila e si carica **da qui**: `stm32/firmware/FanStm32`
+  (in STM32CubeIDE: *File → Import → Existing Projects into Workspace*). Il file da caricare
+  con STM32CubeProgrammer è `stm32/firmware/FanStm32/Debug/FanStm32.elf`.
+- `J:\PYTHON\RL\FAN_SAC_Controller` e `J:\PYTHON\STM32\PROJECT\FanStm32` sono copie
+  vecchie: non vanno più modificate.
+
 ## Struttura
 
 | Cartella | Contenuto |
@@ -70,6 +80,7 @@ policy F sul banco ✅ · deploy su STM32 in corso ([docs/07](docs/07_deploy_stm
 7. [Deploy su STM32](docs/07_deploy_stm32.md): rete in C, clock, USB, firmware (in corso)
 
 Appunti in PDF:
+- [Modello fisico e training SAC](docs/appunti/appunti_modello_training_sac.pdf): modello del banco derivato da zero, formulazione RL, teoria del SAC, esperimenti A-F
 - [Deploy della policy su STM32F407](docs/appunti/appunti_deploy_stm32.pdf): appunti di ingegneria completi, con tutto il codice C commentato
 - [La schermata Clock Configuration](docs/Clock_Configuration_STM32F407.pdf): come si calcolano M, N, P, Q e i prescaler
 
