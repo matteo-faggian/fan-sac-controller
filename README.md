@@ -52,7 +52,7 @@ policy F sul banco ✅ · deploy su STM32 in corso ([docs/07](docs/07_deploy_stm
 | Cartella | Contenuto |
 |---|---|
 | `firmware/` | sketch Arduino: ponte PC ↔ ESC + HX711 |
-| `stm32/` | deploy su STM32F407: rete in C, firmware |
+| `stm32/` | deploy su STM32F407: `rete/` (rete in C ed esportazione), `firmware/FanStm32/` (progetto CubeIDE) |
 | `sysid/` | acquisizione dati e analisi per la system identification |
 | `controller/` | ambiente Gymnasium, training, valutazione, controllo sul banco reale |
 | `data/` | dati grezzi: test sysid e prove reali |
@@ -68,6 +68,10 @@ policy F sul banco ✅ · deploy su STM32 in corso ([docs/07](docs/07_deploy_stm
 5. [Prove sul banco reale](docs/05_prove_sul_banco.md): come lanciare una prova in sicurezza
 6. [Lezioni imparate](docs/06_lezioni_imparate.md): problemi incontrati, diagnosi e soluzioni
 7. [Deploy su STM32](docs/07_deploy_stm32.md): rete in C, clock, USB, firmware (in corso)
+
+Appunti in PDF:
+- [Deploy della policy su STM32F407](docs/appunti/appunti_deploy_stm32.pdf): appunti di ingegneria completi, con tutto il codice C commentato
+- [La schermata Clock Configuration](docs/Clock_Configuration_STM32F407.pdf): come si calcolano M, N, P, Q e i prescaler
 
 ## Avvio rapido
 

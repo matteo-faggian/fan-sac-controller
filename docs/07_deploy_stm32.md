@@ -1,5 +1,7 @@
 # 7. Deploy della policy sullo STM32
 
+> Versione estesa con derivazioni e codice commentato: [appunti in PDF](appunti/appunti_deploy_stm32.pdf). Dettaglio sul clock: [Clock_Configuration_STM32F407.pdf](Clock_Configuration_STM32F407.pdf).
+
 Obiettivo: far girare la policy **F** direttamente su un microcontrollore, senza PC
 nell'anello di controllo. Questo manuale cresce passo per passo: ogni sezione descrive un
 pezzo già verificato.
@@ -180,4 +182,26 @@ clock 168 MHz | errore max ... e-9 | inferenza ... cicli = ... us | OK
 File da aggiungere al progetto CubeIDE: `actor.c` in `Core/Src`; `actor.h`,
 `actor_weights.h`, `test_vectors.h` in `Core/Inc`.
 
-Risultati: *da completare dopo la prova sulla scheda.*
+Progetto completo: `stm32/firmware/FanStm32/` (si apre in CubeIDE con File → Import →
+STM32CubeMX/STM32CubeIDE Project). Contiene già una copia di `actor_weights.h` e
+`test_vectors.h` generati dal modello F, così compila subito dopo il clone.
+
+**Compilazione (verificata):** 0 errori, 0 warning.
+
+```
+   text    data     bss     dec     hex  filename
+ 308156     332   11252  319740   4e0fc  FanStm32.elf
+```
+
+Flash = text + data = 308 488 B (58.8% di 512 KB); RAM = data + bss = 11 584 B (8.8% di 128 KB).
+
+### Problemi incontrati nella creazione del progetto
+
+1. Progetto generato per **IAR** (`TargetToolchain=EWARM V8.50`): mancavano `.cproject`, startup e
+   linker script. Soluzione: Project Manager → Toolchain/IDE → STM32CubeIDE.
+2. Un `.project` generico, creato da un'importazione precedente, impediva a CubeMX di scrivere i file
+   di CubeIDE. Soluzione: togliere il progetto dal workspace, cancellare `.project`, rigenerare.
+3. Residui della prima generazione (CMSIS completa con DSP/NN/RTOS e cartella `EWARM`) causavano
+   15 errori di compilazione in file mai toccati. Soluzione: spostarli fuori dal progetto.
+
+Risultati sul chip: *da completare dopo la prova sulla scheda.*

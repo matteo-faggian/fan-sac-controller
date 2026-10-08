@@ -1,0 +1,627 @@
+% =============================================================================
+% Appunti di ingegneria — Deploy della policy SAC su STM32F407VET6
+% Progetto fan-sac-controller — Matteo Faggian
+% Compilazione:  pdflatex appunti_deploy_stm32.tex   (due volte, per l'indice)
+% =============================================================================
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[italian]{babel}
+\usepackage{mathpazo}
+\usepackage[a4paper,margin=2.3cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs,tabularx,array}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage[most]{tcolorbox}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage{microtype}
+\usepackage[hidelinks]{hyperref}
+
+% ---------------------------------------------------------------- colori
+\definecolor{navy}{HTML}{1D2B4A}
+\definecolor{brick}{HTML}{A53F2B}
+\definecolor{gold}{HTML}{C39B3F}
+\definecolor{cream}{HTML}{FBF7EE}
+\definecolor{codebg}{HTML}{F4F1EA}
+\definecolor{comm}{HTML}{6B7A5A}
+
+% ---------------------------------------------------------------- titoli e testatine
+\titleformat{\section}{\Large\bfseries\color{navy}}{\color{brick}\thesection}{0.8em}{}
+\titleformat{\subsection}{\large\bfseries\color{navy}}{\color{brick}\thesubsection}{0.7em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries\color{navy}}{}{0em}{}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\color{navy} Deploy della policy SAC su STM32F407}
+\fancyhead[R]{\small\color{navy} fan-sac-controller}
+\fancyfoot[C]{\small\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\setlength{\parskip}{0.45em}
+\setlength{\parindent}{0pt}
+\setlist{itemsep=0.15em,topsep=0.3em}
+
+% ---------------------------------------------------------------- codice
+\lstdefinestyle{c}{language=C, basicstyle=\ttfamily\footnotesize, backgroundcolor=\color{codebg},
+  keywordstyle=\color{navy}\bfseries, commentstyle=\color{comm}\itshape, stringstyle=\color{brick},
+  numbers=left, numberstyle=\tiny\color{gray}, numbersep=6pt, frame=l, framerule=2pt, rulecolor=\color{gold},
+  breaklines=true, columns=fullflexible, keepspaces=true, showstringspaces=false, tabsize=4,
+  xleftmargin=1.2em, literate={—}{{---}}1 {à}{{\`a}}1 {è}{{\`e}}1 {ì}{{\`i}}1 {ò}{{\`o}}1 {ù}{{\`u}}1}
+\lstdefinestyle{py}{style=c, language=Python, morekeywords={with,as,assert}}
+\lstdefinestyle{sh}{style=c, language={}, numbers=none, frame=single, framerule=0.4pt, rulecolor=\color{gray}}
+\newcommand{\code}[1]{\texttt{\small #1}}
+
+% ---------------------------------------------------------------- riquadri
+\newtcolorbox{nota}[1][Nota]{enhanced, colback=cream, colframe=gold, boxrule=0pt, leftrule=3pt,
+  sharp corners, title={#1}, fonttitle=\bfseries\color{navy}, coltitle=navy, colbacktitle=cream,
+  attach title to upper={\ \ }, breakable}
+\newtcolorbox{attenzione}[1][Attenzione]{enhanced, colback=cream, colframe=brick, boxrule=0pt, leftrule=3pt,
+  sharp corners, title={#1}, fonttitle=\bfseries\color{brick}, coltitle=brick, colbacktitle=cream,
+  attach title to upper={\ \ }, breakable}
+\newtcolorbox{risultato}[1][Risultato]{enhanced, colback=navy!4, colframe=navy, boxrule=0pt, leftrule=3pt,
+  sharp corners, title={#1}, fonttitle=\bfseries\color{navy}, coltitle=navy, colbacktitle=navy!4,
+  attach title to upper={\ \ }, breakable}
+
+\begin{document}
+
+% =============================================================================
+\begin{titlepage}
+\vspace*{3cm}
+{\color{brick}\rule{3cm}{3pt}}\\[0.8em]
+{\Huge\bfseries\color{navy} Deploy della policy SAC\\[0.2em] su STM32F407VET6}\\[1.2em]
+{\Large\itshape Appunti di ingegneria}\\[3em]
+\begin{tabular}{@{}ll}
+\textbf{Progetto} & fan-sac-controller (controllo in forza di un fan con Reinforcement Learning)\\
+\textbf{Autore}   & Matteo Faggian\\
+\textbf{Periodo}  & ottobre 2026\\
+\textbf{Codice}   & \code{stm32/rete/}, \code{stm32/firmware/FanStm32/}\\
+\end{tabular}
+\vfill
+\begin{nota}[Come leggere questi appunti]
+Descrivono tutto ciò che è stato fatto per portare la policy addestrata in simulazione
+su un microcontrollore: scelta dell'hardware, traduzione della rete in C con verifica numerica,
+configurazione del clock e della USB, creazione del progetto, compilazione e firmware di test.
+Ogni numero riportato è stato misurato o letto dai file del progetto; dove un risultato non è
+ancora disponibile è scritto esplicitamente.
+\end{nota}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+% =============================================================================
+\section{Obiettivo e architettura}
+
+Fino a questo punto la policy (rete \emph{actor} di SAC, modello \textbf{F}) è stata eseguita sul PC:
+l'Arduino leggeva la cella di carico, mandava la misura al PC via USB, il PC calcolava l'azione
+e la rimandava all'Arduino, che pilotava l'ESC. L'obiettivo è eliminare il PC dall'anello:
+\begin{center}
+\small
+\begin{tabular}{@{}l@{}}
+\code{timer 50 Hz -> leggi HX711 -> osservazione -> rete -> comando -> PWM all'ESC}\\
+\code{\hphantom{timer 50 Hz -> leggi HX711 -> }(filtro EMA, integrale, ultimi 3 comandi)}
+\end{tabular}
+\end{center}
+Il periodo di controllo è $T = 20$~ms ($50$~Hz): tutto il ciclo deve stare in questo intervallo.
+
+\paragraph{Effetto atteso sul ritardo.} Con PC e Arduino il ritardo d'anello misurato sul banco
+corrispondeva a circa 3 passi ($\approx 60$~ms), dovuti a USB, scheduler di Windows e catena di
+comunicazione. Su un microcontrollore dedicato questi contributi spariscono; restano conversione
+dell'HX711, periodo del PWM e dinamica di ESC e motore. La policy F è stata addestrata con ritardo
+randomizzato tra 1 e 4 passi, quindi è adatta a entrambi i casi.
+
+% =============================================================================
+\section{Scelta del microcontrollore}
+
+\subsection{Dimensione della rete}
+L'actor è un percettrone a due strati nascosti con ReLU, $7 \to 256 \to 256 \to 1$.
+Il numero di parametri (pesi più bias) è
+\begin{equation}
+N_{par} = \underbrace{(7\cdot 256 + 256)}_{\text{strato 1}} + \underbrace{(256\cdot 256 + 256)}_{\text{strato 2}}
+        + \underbrace{(256 + 1)}_{\text{uscita } \mu} = 2048 + 65\,792 + 257 = 68\,097 .
+\end{equation}
+In virgola mobile a singola precisione (4 byte):
+\begin{equation}
+M_{pesi} = 68\,097 \times 4 = 272\,388\ \text{B} \approx 266\ \text{KiB}.
+\end{equation}
+Il numero di moltiplicazioni-somme (MAC) per un'inferenza è il numero dei pesi, esclusi i bias:
+\begin{equation}
+N_{MAC} = 7\cdot256 + 256\cdot256 + 256 = 67\,584 .
+\end{equation}
+
+\subsection{Confronto tra le schede}
+\begin{center}
+\begin{tabularx}{\textwidth}{@{}lXX@{}}
+\toprule
+ & \textbf{BluePill (STM32F103C8T6)} & \textbf{Black board (STM32F407VET6)}\\
+\midrule
+Core          & Cortex-M3, 72 MHz             & Cortex-M4F, 168 MHz\\
+FPU           & assente: float emulato in software & singola precisione in hardware\\
+Flash         & 64 KB                         & 512 KB\\
+RAM           & 20 KB                         & 128 KB + 64 KB CCM\\
+La rete entra? & no (266 KiB $>$ 64 KB)       & sì, senza quantizzazione\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\begin{nota}[Quali famiglie STM32 hanno la FPU]
+La FPU c'è nei core Cortex-M4F/M7/M33 (famiglie F4, F7, G4, L4, H7\dots). Le famiglie F0, G0, L0
+(Cortex-M0/M0+) e F1 (Cortex-M3) non ce l'hanno, anche quando hanno flash sufficiente: su di esse
+ogni operazione float costa decine di cicli. Una scheda NUCLEO-G0B1RE, per esempio, ha 512 KB di flash
+ma core M0+ a 64 MHz senza FPU: inadatta a questa rete.
+\end{nota}
+
+\subsection{Bilancio di tempo}
+Il tempo di un'inferenza dipende dai cicli spesi per ogni MAC (caricamento di peso e ingresso,
+moltiplicazione, somma) e dalle ottimizzazioni del compilatore. Anche in un caso pessimistico di
+20 cicli per MAC:
+\begin{equation}
+t_{inf} \le \frac{67\,584 \times 20}{168\times10^{6}\ \text{Hz}} \approx 8.0\ \text{ms} < T = 20\ \text{ms}.
+\end{equation}
+Il valore reale viene misurato sul chip dal firmware di test (sezione~\ref{sec:firmware}).
+
+% =============================================================================
+\section{La policy come funzione}
+
+\subsection{Cosa calcola l'actor in modalità deterministica}
+In SAC l'actor produce una distribuzione gaussiana schiacciata da $\tanh$: due teste lineari danno la
+media $\mu$ e il logaritmo della deviazione standard $\log\sigma$. In training l'azione si campiona;
+in esecuzione (\code{deterministic=True}) si usa direttamente la media:
+\begin{equation}
+a = \tanh\!\Big(W_\mu\,\mathrm{ReLU}\big(W_2\,\mathrm{ReLU}(W_1 x + b_1) + b_2\big) + b_\mu\Big), \qquad a\in[-1,1].
+\end{equation}
+La testa $\log\sigma$ non serve e non viene esportata. Questo è stato verificato leggendo la struttura
+del modello con Stable-Baselines3:
+\begin{lstlisting}[style=sh]
+Actor(
+  (latent_pi): Sequential(
+    (0): Linear(in_features=7, out_features=256, bias=True)
+    (1): ReLU()
+    (2): Linear(in_features=256, out_features=256, bias=True)
+    (3): ReLU() )
+  (mu): Linear(in_features=256, out_features=1, bias=True)
+  (log_std): Linear(in_features=256, out_features=1, bias=True) )
+\end{lstlisting}
+
+\subsection{Disposizione dei pesi in memoria}
+In PyTorch \code{Linear.weight} ha forma (uscite $\times$ ingressi) ed è memorizzato riga per riga
+(\emph{row-major}). Uno strato calcola
+\begin{equation}
+y_r = b_r + \sum_{c=0}^{n_{in}-1} W_{rc}\,x_c ,\qquad r = 0,\dots,n_{out}-1 .
+\end{equation}
+Appiattendo la matrice nello stesso ordine, l'elemento $W_{rc}$ si trova all'indice
+\begin{equation}
+k = r\cdot n_{in} + c ,
+\end{equation}
+quindi la riga $r$ è un blocco contiguo di $n_{in}$ valori che inizia all'indice $r\,n_{in}$.
+Il codice C sfrutta proprio questo: punta all'inizio della riga e la scorre.
+
+% =============================================================================
+\section{Esportazione della rete in C}
+
+\subsection{Perché a mano e non con X-CUBE-AI}
+ST fornisce X-CUBE-AI, che genera il C da un modello ONNX. Per una rete di tre strati densi scrivere
+l'inferenza a mano è più semplice: sono tre prodotti matrice-vettore, nessuna dipendenza, e ogni riga
+è comprensibile e verificabile.
+
+\subsection{Script di esportazione}
+File \code{stm32/rete/esporta\_actor.py}. Produce due header:
+\begin{itemize}
+\item \code{actor\_weights.h}: tutti i pesi e i bias come array \code{static const float};
+\item \code{test\_vectors.h}: 100 osservazioni di prova e le azioni calcolate da PyTorch.
+\end{itemize}
+\lstinputlisting[style=py]{../../stm32/rete/esporta_actor.py}
+
+\paragraph{Formato dei numeri.} I pesi sono scritti con \code{\%.9e}, cioè 10 cifre significative.
+Un \code{float} a 32 bit ha bisogno di 9 cifre decimali significative per essere riletto identico
+(\code{FLT\_DECIMAL\_DIG} = 9): con 10 il passaggio testo $\to$ binario è esatto.
+
+\paragraph{Vettori di test.} Le osservazioni sono estratte uniformemente nell'intervallo dello spazio
+delle osservazioni, limitato a $[-1.5,\,1.5]$, con seme fisso (riproducibili). L'azione di riferimento
+è calcolata con \code{model.predict(obs, deterministic=True)}, la stessa funzione usata sul banco.
+
+\subsection{Inferenza in C}
+File \code{stm32/rete/actor.c}.
+\lstinputlisting[style=c]{../../stm32/rete/actor.c}
+
+\begin{itemize}
+\item \code{static const float W1[...]}: \code{const} dice al compilatore che i valori non cambiano,
+  quindi il linker li mette nella sezione \code{.rodata}, che il linker script colloca in \textbf{flash}.
+  Senza \code{const} i 266~KiB verrebbero copiati in RAM all'avvio, e non ci starebbero.
+\item \code{static float h1[256], h2[256]}: i vettori intermedi, $2\times256\times4 = 2$~KiB in RAM.
+  Sono \code{static} (sezione \code{.bss}) e non variabili locali, perché lo stack riservato dal
+  linker script è di soli \code{0x400} = 1024 byte.
+\item \code{lineare()}: implementa $y = Wx+b$ con ReLU opzionale. L'unica funzione di libreria usata è
+  \code{tanhf} (da \code{math.h}).
+\end{itemize}
+
+\subsection{Verifica sul PC}
+File \code{stm32/rete/test\_pc.c}: esegue \code{actor\_forward} sui 100 vettori e confronta con PyTorch.
+\lstinputlisting[style=c]{../../stm32/rete/test_pc.c}
+
+\begin{risultato}[Risultato misurato (modello F)]
+\begin{lstlisting}[style=sh]
+actor_weights.h: 68097 parametri = 266.0 KB in flash
+test_vectors.h: 100 osservazioni, azioni in [-1.000, 0.995]
+test 0: C = -0.999328   PyTorch = -0.999328
+test 1: C = +0.973925   PyTorch = +0.973925
+test 2: C = +0.443066   PyTorch = +0.443066
+errore massimo su 100 test: 3.87e-07  -> OK
+\end{lstlisting}
+L'esportazione è stata ripetuta sul PC di laboratorio a partire da \code{models/sac\_F.zip}
+(impronta MD5 \code{F5BD5A72960522EAC260D9C42B191424}, identica al modello verificato) con lo stesso esito.
+\end{risultato}
+
+\paragraph{Perché l'errore non è zero, e perché $4\cdot10^{-7}$ è accettabile.}
+In singola precisione l'unità di arrotondamento è $u = 2^{-24} \approx 5.96\cdot10^{-8}$.
+Un prodotto scalare di $n$ termini sommati in ordine diverso può differire di una quantità dell'ordine
+di $n\,u\,\sum|w_c x_c|$. PyTorch e il C sommano in ordine diverso (PyTorch usa routine vettoriali), quindi
+piccole differenze sono inevitabili. L'errore osservato vale circa $6.5\,u$: è puro arrotondamento.
+La $\tanh$ ha derivata $\le 1$, quindi non amplifica l'errore. Sul comando del motore,
+un'azione in $[-1,1]$ diventa $u_{banco}\in[1,20]$: $4\cdot10^{-7}$ in azione è circa
+$4\cdot10^{-6}$ in $u$, sei ordini di grandezza sotto la risoluzione dell'impulso (1~µs su 928~µs di corsa).
+
+% =============================================================================
+\section{Clock a 168 MHz}
+
+La derivazione completa di ogni blocco della schermata \emph{Clock Configuration} è nel documento
+dedicato \code{docs/Clock\_Configuration\_STM32F407.pdf}. Qui la sintesi.
+
+\subsection{Catena del PLL}
+Sorgente: quarzo esterno HSE da 8~MHz (obbligatorio con la USB: l'oscillatore interno HSI ha una
+tolleranza di circa $\pm1\%$, la USB full-speed ne ammette $\pm0.25\%$).
+\begin{align}
+f_{in}  &= \frac{f_{HSE}}{M} = \frac{8}{8} = 1\ \text{MHz} && (1 \le f_{in} \le 2\ \text{MHz})\\
+f_{VCO} &= f_{in}\, N = 336\ \text{MHz} && (100 \le f_{VCO} \le 432\ \text{MHz})\\
+f_{SYS} &= \frac{f_{VCO}}{P} = \frac{336}{2} = 168\ \text{MHz} && (\le 168\ \text{MHz})\\
+f_{USB} &= \frac{f_{VCO}}{Q} = \frac{336}{7} = 48\ \text{MHz} && (= 48\ \text{MHz esatti})
+\end{align}
+La scelta di $f_{VCO}$ segue dal vincolo $f_{VCO} = 168\,P = 48\,Q$ con $P\in\{2,4,6,8\}$:
+solo $P=2$ dà $f_{VCO}=336 \le 432$, da cui $Q=7$.
+
+\subsection{Bus}
+\begin{center}
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+Bus & Prescaler & Frequenza & Massimo & Clock dei timer\\
+\midrule
+AHB (CPU, memorie) & /1 & 168 MHz & 168 MHz & ---\\
+APB1 & /4 & 42 MHz & 42 MHz & 84 MHz\\
+APB2 & /2 & 84 MHz & 84 MHz & 168 MHz\\
+\bottomrule
+\end{tabular}
+\end{center}
+Regola del raddoppio: se il prescaler di un bus APB è diverso da 1, i timer su quel bus ricevono
+il doppio della frequenza del bus.
+
+\subsection{Errore incontrato: \texorpdfstring{$N = 136$}{N = 136}}
+CubeMX mostrava tutto a 68~MHz e la casella dei 48~MHz in rosso con 19.43. Rifacendo la catena:
+$136/2 = 68$, $136/7 = 19.43$. Il valore sbagliato era $N$.
+
+\begin{nota}[Wait state della flash]
+A 168~MHz la flash richiede 5 cicli di attesa per lettura (con $V_{DD}$ tra 2.7 e 3.6~V).
+CubeMX lo imposta da solo in \code{SystemClock\_Config()} con \code{FLASH\_LATENCY\_5};
+l'acceleratore ART (cache e prefetch) nasconde gran parte dell'attesa.
+\end{nota}
+
+% =============================================================================
+\section{USB: caricamento (DFU) e comunicazione (CDC)}
+
+Scelta di progetto: un solo cavo, il connettore micro USB della scheda, senza ST-Link né adattatore
+USB-seriale. La stessa porta svolge due funzioni in momenti diversi, decisi dal pin \textbf{BOOT0}:
+\begin{center}
+\begin{tabularx}{\textwidth}{@{}lccX@{}}
+\toprule
+Momento & BOOT0 & Chi gestisce la USB & Cosa vede il PC\\
+\midrule
+Caricamento & 3.3 V & bootloader di fabbrica (DFU) & dispositivo ``STM32 BOOTLOADER''\\
+Esecuzione  & GND   & il firmware (classe CDC)     & una porta seriale \code{COMx}\\
+\bottomrule
+\end{tabularx}
+\end{center}
+Al reset il micro legge BOOT0: se è alto esegue il bootloader scritto in fabbrica nella
+\emph{system memory}, se è basso salta al programma in flash (\code{0x08000000}). BOOT1 resta a GND.
+
+La classe \textbf{CDC} (\emph{Communication Device Class}, ``Virtual Port Com'') fa apparire il micro
+come una porta seriale standard; Windows 10/11 ha già il driver. Il baud rate impostato sul PC è
+irrilevante, perché i dati viaggiano in pacchetti USB e non su una linea seriale reale.
+
+Rinuncia: senza ST-Link non c'è debug passo-passo. Tutte le verifiche si fanno stampando sulla seriale.
+
+\paragraph{Impostazioni CubeMX.}
+\code{USB\_OTG\_FS} in modalità \code{Device\_Only} (pin PA11 = D$-$, PA12 = D$+$);
+\code{Middleware} $\to$ \code{USB\_DEVICE} con classe \code{Communication Device Class};
+\code{SYS} $\to$ \code{Debug: Serial Wire} (PA13, PA14);
+\code{PA6} come \code{GPIO\_Output} (LED D2, attivo basso).
+
+% =============================================================================
+\section{Il progetto CubeIDE}
+
+\subsection{Struttura}
+\begin{center}
+\small
+\begin{tabularx}{\textwidth}{@{}>{\ttfamily}lX@{}}
+\toprule
+\normalfont\bfseries File / cartella & \bfseries Ruolo\\
+\midrule
+FanStm32.ioc & configurazione grafica di CubeMX (pin, clock, periferiche)\\
+.project, .cproject & descrizione del progetto per CubeIDE: compilatore, opzioni, percorsi degli header\\
+Core/Src, Core/Inc & codice applicativo: \code{main.c}, \code{actor.c} e relativi header\\
+Core/Startup/*.s & primo codice eseguito al reset: inizializza \code{.data} e \code{.bss}, chiama \code{SystemInit} e \code{main}\\
+STM32F407VETX\_FLASH.ld & linker script: mappa di flash e RAM e posizione di ogni sezione\\
+Drivers/STM32F4xx\_HAL\_Driver & libreria HAL di ST\\
+Drivers/CMSIS & definizioni del core e dei registri del chip (\code{GPIOA}, \code{DWT}, \dots)\\
+Middlewares, USB\_DEVICE & stack USB di ST e sua configurazione per la classe CDC\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Il linker script}
+Dal file \code{STM32F407VETX\_FLASH.ld}:
+\begin{lstlisting}[style=sh]
+CCMRAM (xrw) : ORIGIN = 0x10000000, LENGTH = 64K
+RAM    (xrw) : ORIGIN = 0x20000000, LENGTH = 128K
+FLASH  (rx)  : ORIGIN = 0x8000000,  LENGTH = 512K
+_Min_Heap_Size  = 0x200;   /* 512 B  */
+_Min_Stack_Size = 0x400;   /* 1024 B */
+\end{lstlisting}
+I ``192 KB di RAM'' del datasheet sono quindi 128~KB di RAM principale più 64~KB di CCM RAM
+(\emph{Core Coupled Memory}), collegata direttamente alla CPU e non accessibile dal DMA.
+Per default il linker usa solo la RAM principale.
+
+\subsection{Problemi incontrati nella creazione del progetto}
+\begin{enumerate}
+\item \textbf{Toolchain sbagliata.} Il progetto era stato generato per IAR Embedded Workbench:
+  nel file \code{.ioc} si leggeva \code{TargetToolchain=EWARM V8.50}. Mancavano
+  \code{.cproject}, startup e linker script per GCC: CubeIDE lo vedeva come una cartella generica.
+  \emph{Soluzione:} Project Manager $\to$ Toolchain/IDE $\to$ STM32CubeIDE.
+\item \textbf{\code{.project} preesistente.} La prima importazione aveva creato un \code{.project}
+  generico; alla rigenerazione CubeMX lo ha trovato e non ha scritto gli altri file di CubeIDE
+  (il log riportava la generazione dei sorgenti ma nessun \code{.cproject}).
+  \emph{Soluzione:} rimozione del progetto dal workspace (senza cancellare i file), eliminazione di
+  \code{.project}, nuova generazione.
+\item \textbf{Residui della prima generazione.} In \code{Drivers/CMSIS} c'era l'intera libreria CMSIS
+  (DSP, NN, RTOS, RTOS2, \dots) e c'era la cartella \code{EWARM} con uno startup in sintassi IAR.
+  CubeIDE compila tutti i \code{.c} presenti nel progetto: 15 errori, nessuno nel codice applicativo, del tipo
+\begin{lstlisting}[style=sh]
+fatal error: RTE_Components.h: No such file or directory
+fatal error: arm_nnfunctions.h: No such file or directory
+\end{lstlisting}
+  Con \code{LibraryCopy=1} (``copia solo i file necessari'') CubeMX copia solo \code{Device} e
+  \code{Include}, ma non cancella ciò che resta da generazioni precedenti.
+  \emph{Soluzione:} cartelle spostate (non cancellate) in una cartella di backup fuori dal progetto.
+\end{enumerate}
+
+\begin{nota}[Lezione]
+Un errore di compilazione in un file che non si è mai toccato indica quasi sempre un problema di
+\emph{progetto} (file in più, percorsi, toolchain), non di codice. Il primo controllo è il percorso
+del file che dà errore.
+\end{nota}
+
+% =============================================================================
+\section{Compilazione}
+
+\subsection{Dal sorgente all'eseguibile}
+\begin{enumerate}
+\item \textbf{Compilazione}: ogni \code{.c} è tradotto separatamente in un file oggetto \code{.o}
+  dal compilatore \code{arm-none-eabi-gcc}.
+\item \textbf{Link}: il linker unisce gli oggetti, risolve i riferimenti tra file (\code{main.c}
+  chiama \code{actor\_forward} definita in \code{actor.c}) e assegna gli indirizzi seguendo il
+  linker script. Risultato: \code{FanStm32.elf}.
+\end{enumerate}
+Riga effettivamente usata per \code{actor.c} (configurazione Debug, percorsi di inclusione omessi):
+\begin{lstlisting}[style=sh]
+arm-none-eabi-gcc ../Core/Src/actor.c -mcpu=cortex-m4 -std=gnu11 -g3 -DDEBUG
+  -DUSE_HAL_DRIVER -DSTM32F407xx -c -O0 -ffunction-sections -fdata-sections -Wall
+  --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb
+\end{lstlisting}
+\begin{center}
+\small
+\begin{tabularx}{\textwidth}{@{}>{\ttfamily}lX@{}}
+\toprule
+\normalfont\bfseries Opzione & \bfseries Significato\\
+\midrule
+-mcpu=cortex-m4 -mthumb & genera istruzioni per il Cortex-M4 (set Thumb-2)\\
+-mfpu=fpv4-sp-d16 & usa la FPU a singola precisione del M4\\
+-mfloat-abi=hard & passa i float nei registri della FPU: i calcoli float sono istruzioni hardware\\
+-O0 & nessuna ottimizzazione (configurazione Debug): codice lento ma fedele al sorgente\\
+-ffunction-sections -fdata-sections & ogni funzione e variabile in una sezione separata; con \code{-Wl,--gc-sections} il linker elimina quelle mai usate\\
+--specs=nano.specs & libreria C ridotta (newlib-nano): il \code{printf} di default non stampa i float\\
+-g3 & informazioni di debug complete (non finiscono in flash)\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Compilazione da riga di comando}
+CubeIDE ha una versione senza interfaccia, \code{stm32cubeidec.exe}, che compila un progetto su un
+workspace temporaneo; equivale al pulsante \emph{Build}:
+\begin{lstlisting}[style=sh]
+stm32cubeidec.exe --launcher.suppressErrors -nosplash
+  -application org.eclipse.cdt.managedbuilder.core.headlessbuild
+  -data <workspace temporaneo> -import <cartella del progetto> -build FanStm32/Debug
+\end{lstlisting}
+
+\subsection{Occupazione di memoria}
+\begin{risultato}[Uscita di \code{arm-none-eabi-size}]
+\begin{lstlisting}[style=sh]
+   text    data     bss     dec     hex  filename
+ 308156     332   11252  319740   4e0fc  FanStm32.elf
+Build Finished. 0 errors, 0 warnings.
+\end{lstlisting}
+\end{risultato}
+\begin{itemize}
+\item \textbf{text}: codice e costanti, in flash.
+\item \textbf{data}: variabili con valore iniziale; occupano RAM, ma il loro valore iniziale è
+  conservato in flash e copiato dallo startup.
+\item \textbf{bss}: variabili inizializzate a zero, solo in RAM.
+\end{itemize}
+\begin{align}
+\text{Flash} &= \text{text} + \text{data} = 308\,488\ \text{B} \;\Rightarrow\; \frac{308\,488}{524\,288} = 58.8\,\%\\
+\text{RAM}   &= \text{data} + \text{bss} = 11\,584\ \text{B} \;\Rightarrow\; \frac{11\,584}{131\,072} = 8.8\,\%
+\end{align}
+Ripartizione della flash: pesi $272\,388$~B, vettori di test $800\times4 = 3\,200$~B,
+il resto ($\approx 32.6$~KB) è codice: HAL, stack USB, libreria C, applicazione.
+
+% =============================================================================
+\section{Firmware di test della rete}
+\label{sec:firmware}
+
+Scopo: ripetere sul microcontrollore la verifica fatta sul PC e misurare il tempo di inferenza.
+Tutto il codice applicativo è nei blocchi \code{/* USER CODE BEGIN ... */ ... /* USER CODE END ... */}
+di \code{main.c}: CubeMX, quando rigenera, conserva solo ciò che sta tra quei marcatori.
+È stato verificato: dopo due rigenerazioni il codice era intatto.
+
+\subsection{Inclusioni}
+\begin{lstlisting}[style=c]
+/* USER CODE BEGIN Includes */
+#include <stdio.h>
+#include <string.h>
+#include "usbd_cdc_if.h"   // CDC_Transmit_FS: invio sulla seriale USB
+#include "actor.h"         // inferenza della rete (actor SAC)
+#include "test_vectors.h"  // 100 osservazioni + azioni calcolate da PyTorch
+/* USER CODE END Includes */
+\end{lstlisting}
+
+\subsection{Trasmissione sulla seriale USB}
+\begin{lstlisting}[style=c]
+/* USER CODE BEGIN 0 */
+#define N_OBS 7
+extern USBD_HandleTypeDef hUsbDeviceFS;   // definito in usb_device.c
+static char txbuf[160];                   // buffer di uscita: deve restare valido
+                                          // finche' la USB non ha finito di spedirlo
+static void usb_print(const char *s)
+{
+  USBD_CDC_HandleTypeDef *h = (USBD_CDC_HandleTypeDef *)hUsbDeviceFS.pClassData;
+  uint32_t t0 = HAL_GetTick();
+  while (h != NULL && h->TxState != 0) {        // invio precedente ancora in corso
+    if (HAL_GetTick() - t0 > 50) return;        // PC non in ascolto: rinuncio
+  }
+  strncpy(txbuf, s, sizeof(txbuf) - 1);
+  CDC_Transmit_FS((uint8_t *)txbuf, strlen(txbuf));
+}
+/* USER CODE END 0 */
+\end{lstlisting}
+\begin{itemize}
+\item \code{CDC\_Transmit\_FS} non copia i dati: avvia il trasferimento e ritorna subito; la periferica
+  USB legge poi i byte direttamente dalla memoria. Il buffer deve quindi restare valido fino alla fine
+  dell'invio: per questo è \code{static}. Una variabile locale verrebbe sovrascritta appena la
+  funzione ritorna.
+\item \code{TxState} vale 0 quando la classe CDC è libera. Si aspetta al massimo 50~ms: se nessun
+  programma sul PC ha aperto la porta, l'invio non si completa e il firmware non deve bloccarsi.
+\item \code{hUsbDeviceFS.pClassData} è \code{NULL} finché il PC non ha configurato il dispositivo:
+  il controllo evita di dereferenziare un puntatore nullo.
+\end{itemize}
+
+\subsection{Contatore di cicli DWT}
+\begin{lstlisting}[style=c]
+  /* USER CODE BEGIN 2 */
+  CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;   // abilita le unita' di trace
+  DWT->CYCCNT = 0;                                  // azzera il contatore
+  DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;              // avvia il conteggio
+  HAL_Delay(2000);   // tempo a Windows per riconoscere la porta seriale
+  /* USER CODE END 2 */
+\end{lstlisting}
+Il DWT (\emph{Data Watchpoint and Trace}) è un'unità di debug del Cortex-M4 che contiene un contatore
+a 32 bit incrementato a ogni ciclo di clock. A 168~MHz:
+\begin{equation}
+1\ \text{ciclo} = \frac{1}{168}\ \mu\text{s}\approx 5.95\ \text{ns}, \qquad
+t_{overflow} = \frac{2^{32}}{168\times10^6} \approx 25.6\ \text{s}.
+\end{equation}
+La durata si calcola come \code{CYCCNT\_fine - CYCCNT\_inizio} in aritmetica \code{uint32\_t}:
+la differenza tra interi senza segno è corretta anche se il contatore ha superato $2^{32}$ nel mezzo,
+purché l'intervallo misurato sia minore di 25.6~s.
+
+\subsection{Ciclo di test}
+\begin{lstlisting}[style=c]
+    /* USER CODE BEGIN 3 */
+    char riga[140];
+    float err_max = 0.0f;
+    uint32_t cicli = 0;
+    for (int k = 0; k < N_TEST; k++) {
+      uint32_t c0 = DWT->CYCCNT;
+      float a = actor_forward(&TEST_OBS[k * N_OBS]);   // inferenza sul chip
+      cicli = DWT->CYCCNT - c0;                        // cicli dell'ultima inferenza
+      float e = a - TEST_AZIONE[k];
+      if (e < 0) e = -e;
+      if (e > err_max) err_max = e;
+    }
+    snprintf(riga, sizeof(riga),
+             "clock %lu MHz | errore max %lu e-9 | inferenza %lu cicli = %lu us | %s\r\n",
+             (unsigned long)(HAL_RCC_GetHCLKFreq() / 1000000), (unsigned long)(err_max * 1e9f),
+             (unsigned long)cicli, (unsigned long)(cicli / 168), err_max < 1e-5f ? "OK" : "DIVERSO!");
+    usb_print(riga);
+    HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_6);   // D2 lampeggia: il programma e' vivo
+    HAL_Delay(2000);
+  }
+  /* USER CODE END 3 */
+\end{lstlisting}
+\begin{itemize}
+\item \code{TEST\_OBS[k * N\_OBS]}: le osservazioni sono un array piatto di $100\times7$ valori; la
+  $k$-esima inizia all'indice $7k$.
+\item \code{HAL\_RCC\_GetHCLKFreq()} legge dai registri RCC la frequenza effettiva: è la prova che il
+  clock è davvero 168~MHz, non solo nel disegno di CubeMX.
+\item L'errore è stampato come intero $\times10^9$ perché con \code{nano.specs} il formato \code{\%f}
+  non è abilitato (si può attivare con l'opzione di link \code{-u \_printf\_float}, al prezzo di
+  qualche KB di flash).
+\item Criterio di accettazione: errore massimo $< 10^{-5}$, lo stesso usato sul PC.
+\end{itemize}
+
+\subsection{Caricamento e verifica}
+\begin{enumerate}
+\item BOOT0 su 3.3~V, collegare la USB.
+\item STM32CubeProgrammer: porta \code{USB}, \emph{Connect}; poi \emph{Erasing \& Programming},
+  scegliere il file\\ \code{Debug/FanStm32.elf} e premere \emph{Start Programming}.
+\item BOOT0 su GND, scollegare e ricollegare.
+\item Aprire la nuova porta \code{COMx} con un terminale seriale (es. Monitor seriale dell'IDE Arduino).
+\end{enumerate}
+Riga attesa ogni 2~s, con il LED D2 che cambia stato:
+\begin{lstlisting}[style=sh]
+clock 168 MHz | errore max ... e-9 | inferenza ... cicli = ... us | OK
+\end{lstlisting}
+\begin{attenzione}[Risultato sul chip]
+Da completare dopo la prova sulla scheda: frequenza letta, errore massimo, cicli e microsecondi
+per inferenza. Atteso: \code{clock 168}, errore dell'ordine di $10^{-7}$ come sul PC, tempo di
+inferenza nell'ordine dei millisecondi con \code{-O0}.
+\end{attenzione}
+
+% =============================================================================
+\section{Prossimi passi}
+
+\subsection{PWM per l'ESC}
+L'ESC accetta un impulso ogni 20~ms (50~Hz). Il comando usato sul banco va da 1472~µs (fermo) a
+544~µs (pieno). Con un timer su APB1 ($f_{TIM} = 84$~MHz):
+\begin{equation}
+f_{PWM} = \frac{f_{TIM}}{(PSC+1)(ARR+1)} .
+\end{equation}
+Con $PSC = 83$ il contatore avanza a $84/84 = 1$~MHz, cioè 1~µs per conteggio; con $ARR = 19\,999$
+il periodo è $20\,000$~µs = 20~ms. Il registro di confronto \code{CCR} è allora direttamente la
+larghezza dell'impulso in microsecondi:
+\begin{equation}
+CCR = 1472 - \frac{u}{40}\,(1472 - 544), \qquad u\in[0,\,40].
+\end{equation}
+
+\subsection{Restanti}
+\begin{enumerate}
+\item Lettura dell'HX711 (stesso algoritmo del firmware Arduino v2, senza bloccare gli interrupt) e
+  nuova calibrazione se l'HX711 viene alimentato a 3.3~V invece che a 5~V.
+\item Anello di controllo in un interrupt a 50~Hz: osservazione (forza, errore, derivata filtrata,
+  ultimi 3 comandi, integrale) costruita esattamente come in \code{env\_fan.py}, inferenza, comando.
+\item Protezioni: campione non valido, sensore muto per più di 100~ms, forza oltre 8~N, limite sul comando.
+\item Prova sul banco con lo stesso protocollo usato per PC + Arduino e confronto dei risultati.
+\end{enumerate}
+
+% =============================================================================
+\section{Riepilogo delle lezioni}
+\begin{itemize}
+\item Verificare la rete esportata contro il modello originale \emph{prima} di metterla sul chip:
+  separa gli errori di traduzione da quelli di firmware.
+\item Nei microcontrollori le costanti grandi vanno dichiarate \code{const}, altrimenti finiscono in RAM.
+\item Il clock si progetta da sinistra a destra rispettando prima le frequenze obbligate (USB 48~MHz),
+  poi quella desiderata; si verifica sul chip leggendo i registri.
+\item In CubeMX la toolchain di destinazione determina quali file di progetto vengono creati; file
+  residui di generazioni precedenti non vengono rimossi.
+\item Il codice applicativo va sempre nei blocchi \code{USER CODE}.
+\end{itemize}
+
+\end{document}

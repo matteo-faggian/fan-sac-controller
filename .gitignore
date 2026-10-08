@@ -25,3 +25,13 @@ stm32/rete/actor_weights.h
 stm32/rete/test_vectors.h
 stm32/rete/test_pc
 stm32/rete/test_pc.exe
+
+# LaTeX: file temporanei di compilazione (il PDF invece si tiene)
+docs/appunti/*.aux
+docs/appunti/*.log
+docs/appunti/*.out
+docs/appunti/*.toc
+
+# Firmware STM32: cartelle di compilazione (si rigenerano con Build)
+stm32/firmware/**/Debug/
+stm32/firmware/**/Release/
