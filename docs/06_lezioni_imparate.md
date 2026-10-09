@@ -82,8 +82,38 @@ cartella **da cui si lancia** il comando, non in quella dello script.
 **Abitudine:** lanciare sempre da `controller/` e rinominare `best_sac_fan/` e `logs/` prima
 di un nuovo training, altrimenti il modello precedente viene sovrascritto.
 
+## STM32: nessuna porta COM
+**Sintomo:** dopo il caricamento, Windows non mostra nessuna COM nuova.
+**Causa:** la scheda era ancora in modalità DFU: STM32CubeProgrammer vedeva VID 0x0483 / PID 0xDF11,
+cioè il bootloader di fabbrica. In DFU il programma in flash non parte.
+**Soluzione:** BT0 su GND e scollegare/ricollegare la USB. Il programma si presenta come
+"Dispositivo seriale USB (COMx)" con PID 0x5740.
+
+## STM32: "dispositivo USB sconosciuto" con il LED che lampeggia
+**Sintomo:** LED vivo, ma Windows segnala "richiesta descrittore dispositivo non riuscita".
+**Causa:** nella flash c'era **un altro programma**. Il `.elf` era stato aperto in una scheda di
+CubeProgrammer ma mai scritto.
+**Diagnosi:** confronto della tabella dei vettori. All'indirizzo 0x08000004 c'è l'indirizzo del
+`Reset_Handler`, diverso per ogni compilazione: 0x0800071D nella flash, 0x08000BA9 nel file.
+**Abitudine:** dopo Start Programming aspettare *Download verified successfully*.
+
+## STM32: inferenza da 18 ms
+**Sintomo:** la rete occupava il 92% del passo da 20 ms.
+**Causa:** la configurazione Debug compila con `-O0` (ottimizzazione spenta): 46 cicli per
+moltiplicazione-somma.
+**Soluzione:** `-O2` → 4.18 ms. Va impostato nel progetto da cui si compila davvero:
+c'erano due copie del progetto e la prima volta era stato cambiato in quella sbagliata.
+
+## STM32: HX711 sempre a zero
+**Sintomo:** `raw = 0` a ogni lettura, sempre "fresco".
+**Causa:** il filo SCK non era su PB12. Senza impulsi l'HX711 tiene DT basso ("dato pronto") per
+sempre e i 24 bit letti sono tutti 0.
+**Indizio utile:** una cella vera non dà mai lo stesso valore due volte di fila: il rumore cambia
+sempre le ultime cifre.
+
 ## Metodo
 - Cambiare **una cosa alla volta** quando possibile, e valutare sempre con gli stessi seed.
 - Confrontare metriche fisiche (N), non il reward, quando il reward cambia tra esperimenti.
 - Prima di mettere una policy sul banco, provarla in simulazione nel caso peggiore
   (ritardo più lungo, parametri agli estremi).
+- Una sola copia viva del progetto: le copie parallele fanno modificare il file sbagliato.

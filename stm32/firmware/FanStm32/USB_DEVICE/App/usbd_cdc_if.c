@@ -22,6 +22,7 @@
 #include "usbd_cdc_if.h"
 
 /* USER CODE BEGIN INCLUDE */
+#include "main.h"   /* per cdc_ricevuto(): i comandi del PC vanno al main */
 
 /* USER CODE END INCLUDE */
 
@@ -261,6 +262,7 @@ static int8_t CDC_Control_FS(uint8_t cmd, uint8_t* pbuf, uint16_t length)
 static int8_t CDC_Receive_FS(uint8_t* Buf, uint32_t *Len)
 {
   /* USER CODE BEGIN 6 */
+  cdc_ricevuto(Buf, *Len);   /* passo i byte ricevuti al main (gira in interrupt: deve essere breve) */
   USBD_CDC_SetRxBuffer(&hUsbDeviceFS, &Buf[0]);
   USBD_CDC_ReceivePacket(&hUsbDeviceFS);
   return (USBD_OK);

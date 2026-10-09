@@ -7,8 +7,8 @@ nell'anello di controllo. Questo manuale cresce passo per passo: ogni sezione de
 pezzo già verificato.
 
 **Stato:** scelta della scheda ✅ · rete in C verificata sul PC ✅ · clock a 168 MHz ✅ ·
-USB (DFU + seriale CDC) ⏳ · test della rete sul chip ⏳ · PWM ESC ⏳ · HX711 ⏳ ·
-anello chiuso ⏳ · prova sul banco ⏳
+USB (DFU + seriale CDC) ✅ · test della rete sul chip ✅ · PWM ESC ✅ · HX711 ✅ ·
+anello chiuso ✅ · prova sul banco ✅ (report: [08](08_prove_stm32.md))
 
 ## 7.1 Perché lo STM32F407 (e non il BluePill)
 
@@ -168,7 +168,7 @@ si fa stampando sulla seriale.
 - **SYS → Debug:** `Serial Wire` (PA13, PA14 riservati: utile se un giorno si usa un ST-Link)
 - **PA6 → GPIO_Output:** LED D2, per vedere che il programma gira
 
-## 7.6 Primo firmware: la rete sul chip (in corso)
+## 7.6 Primo firmware: la rete sul chip
 
 Il primo firmware ripete sul microcontrollore lo stesso test fatto sul PC: calcola le 100
 azioni di `test_vectors.h`, le confronta con quelle di PyTorch e misura quanti cicli di
@@ -204,4 +204,85 @@ Flash = text + data = 308 488 B (58.8% di 512 KB); RAM = data + bss = 11 584 B (
 3. Residui della prima generazione (CMSIS completa con DSP/NN/RTOS e cartella `EWARM`) causavano
    15 errori di compilazione in file mai toccati. Soluzione: spostarli fuori dal progetto.
 
-Risultati sul chip: *da completare dopo la prova sulla scheda.*
+### Risultati sul chip
+
+```
+clock 168 MHz | errore max 387 e-9 | inferenza 3100163 cicli = 18453 us | OK   (build -O0)
+clock 168 MHz | errore max 268 e-9 | inferenza 702472 cicli = 4181 us | OK     (build -O2)
+```
+
+- L'errore massimo rispetto a PyTorch è dell'ordine dell'arrotondamento dei `float` a 32 bit:
+  **la rete in C sul chip è corretta**. Cambia un poco tra le due build perché il compilatore
+  ottimizzato esegue le somme in un altro ordine.
+- Con `-O0` (default della configurazione Debug) l'inferenza occupava il 92% del passo da 20 ms:
+  46 cicli per moltiplicazione-somma. Con `-O2` scende a 10.4 cicli, 4.18 ms.
+  Impostazione: Properties → C/C++ Build → Settings → MCU/MPU GCC Compiler → Optimization →
+  *Optimize more (-O2)*.
+
+## 7.7 Firmware di controllo
+
+Il firmware finale (`Core/Src/main.c`, commentato riga per riga) fa sullo STM32 esattamente
+quello che `controller/controllo_reale.py` faceva sul PC. Tutto il codice aggiunto sta nelle
+sezioni `USER CODE` (CubeMX non lo cancella se si rigenera) e configura timer e pin
+**direttamente nei registri**: il modulo HAL dei timer non è abilitato nel progetto.
+
+### Collegamenti
+
+| Da | A | Note |
+|---|---|---|
+| ESC segnale | **PB6** | TIM4 canale 1, funzione alternativa AF2 |
+| ESC massa (connettore segnale) | GND | indispensabile: riferimento del segnale |
+| ESC rosso (BEC 5 V) | — | non collegato: la scheda è alimentata dalla USB |
+| HX711 SCK | **PB12** | uscita push-pull |
+| HX711 DT | **PB13** | ingresso con pull-up interno: se il filo si stacca DT resta alto e il controllo si ferma |
+| HX711 VCC / GND | 5 V / GND | vedi nota sotto |
+
+**Nota sulla tensione dell'HX711.** Il datasheet chiede che l'HX711 abbia la *stessa
+alimentazione del microcontrollore*. Con l'Arduino (5 V) era così, con lo STM32 (3.3 V) no.
+A 5 V funziona (lo STM32 pilota SCK con 3.3 V e l'HX711 li riconosce), ma non ho verificato
+sul datasheet ST che PB13 sopporti i 5 V che arrivano da DT. Le alternative sono HX711 a
+3.3 V con ricalibrazione (comando `K`), oppure una resistenza da 4.7 kΩ in serie su DT.
+
+### PWM dell'ESC
+
+- Clock del timer: APB1 = 42 MHz con prescaler /4 ≠ 1, quindi i timer ricevono 2 × 42 = **84 MHz**.
+  Il firmware lo calcola dai registri (`tim4_clock_hz()`) invece di darlo per scontato.
+- PSC = 84 − 1 → 1 tick = 1 µs; ARR = 20000 − 1 → periodo 20 ms (50 Hz, come la libreria Servo).
+  Il messaggio di avvio stampa `TIM4 PSC 83`: è la verifica che la scala sia giusta.
+- Mappatura **identica** allo sketch `banco_sysid_v2.ino`: µs = 1472 − round(u/40 × 928),
+  con u limitato a [0, 25]. L'impulso **diminuisce** quando la spinta aumenta.
+
+### Ciclo di controllo (50 Hz)
+
+Stesso ordine di `controllo_reale.py` (righe 271–293), costanti copiate da `env_fan.py`:
+forza F = (raw − raw_zero)/k → derivata filtrata (β = 0.2) → errore e = 1.15 − F →
+integrale saturato a ±0.5 → 7 ingressi [F/2.5, e/1.15, dF/2.5, c₋₁, c₋₂, c₋₃, I/0.5] →
+rete → c = 0.05 + 0.95·(a+1)/2 → u = 20c → impulso. La memoria dei comandi si aggiorna
+**dopo** aver calcolato il nuovo, come `registra_comando()`.
+
+### Sicurezza
+
+- All'accensione: neutro (1472 µs) subito, autotest della rete, 3 s di attesa per armare l'ESC.
+- **Watchdog indipendente (IWDG)**: se il programma si blocca per ~0.5 s il chip si resetta, e al
+  riavvio l'ESC riceve di nuovo il neutro.
+- Stop automatico se |F| > 8 N, se non arriva un campione valido da più di 100 ms, dopo 180 s.
+- La telemetria USB non rallenta mai il controllo: se la USB è occupata la riga si scarta e si conta.
+
+### Comandi (seriale USB) e uso
+
+`Z` zero · `K` calibrazione con 317 g · `S` avvio · `X` stop · `P` stato · `H` aiuto.
+
+```
+cd stm32
+python monitor_stm32.py COM4
+```
+
+Lo script guida zero, eventuale calibrazione e avvio, e salva un CSV con le colonne
+`t_ms, F_mN, c_x1000, u_us, inferenza_us, eta_ms`. Analisi: `python analizza_prova.py file.csv`.
+
+### Caricare il firmware
+
+BT0 su 3.3V → USB → STM32CubeProgrammer, porta `USB`, Connect → Erasing & Programming →
+`Debug/FanStm32.elf` → **Start Programming** → attendere *Download verified successfully* →
+Disconnect → BT0 su GND → scollegare e ricollegare. Aprire il file in CubeProgrammer **non** lo scrive.
+

@@ -53,6 +53,8 @@ extern "C" {
 void Error_Handler(void);
 
 /* USER CODE BEGIN EFP */
+/* Chiamata dalla USB (usbd_cdc_if.c) quando il PC manda dei byte: vedi main.c */
+void cdc_ricevuto(const uint8_t *buf, uint32_t len);
 
 /* USER CODE END EFP */
 

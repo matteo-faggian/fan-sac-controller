@@ -27,7 +27,7 @@ banco reale ──[test]──▶ dati ──[system identification]──▶ pa
           policy SAC (rete neurale) ◀──[training]── simulatore (env_fan.py)
                   │
                   ▼
-     test sul banco reale (PC + Arduino)  ──▶  deploy su STM32 (in programma)
+     test sul banco reale (PC + Arduino)  ──▶  deploy su STM32 (la rete gira sul chip)
 ```
 
 ## Risultati principali
@@ -36,7 +36,9 @@ banco reale ──[test]──▶ dati ──[system identification]──▶ pa
 |---|---|---|
 | RMS errore di forza, policy E | 0.078–0.090 N | **0.067–0.085 N** |
 | Errore medio, policy E | — | +0.003 N |
-| RMS errore, policy F, ritardo 3 passi (come il banco) | 0.111 N (E: 0.151 N) | *prova in corso* |
+| RMS errore, policy F, ritardo 3 passi (come il banco PC + Arduino) | 0.111 N (E: 0.151 N) | — |
+| RMS errore, policy F **sullo STM32**, ESC a 16 V | 0.096 N (ritardo 1 passo) | **0.096 N** |
+| RMS errore, policy F sullo STM32, ESC a 12 V | — | 0.148 N |
 
 Il trasferimento simulatore → banco ha funzionato: le prestazioni reali stanno nell'intervallo
 previsto dalla simulazione. Sul banco la policy E mostrava un'oscillazione a ~3 Hz, dovuta al
@@ -45,7 +47,7 @@ con la storia dei comandi nell'osservazione, in simulazione riduce quell'oscilla
 tre volte (vedi [docs/04](docs/04_ambiente_e_training.md)).
 
 **Stato:** sysid ✅ · simulatore validato ✅ · policy E sul banco ✅ · policy F in simulazione ✅ ·
-policy F sul banco ✅ · deploy su STM32 in corso ([docs/07](docs/07_deploy_stm32.md))
+policy F sul banco ✅ · **deploy su STM32 ✅** ([docs/07](docs/07_deploy_stm32.md), report [docs/08](docs/08_prove_stm32.md))
 
 ## Dove si lavora
 
@@ -54,15 +56,15 @@ Questa cartella (`J:\PYTHON\RL\fan-sac-controller`) è **l'unica copia viva** de
 - Il firmware STM32 si apre, si compila e si carica **da qui**: `stm32/firmware/FanStm32`
   (in STM32CubeIDE: *File → Import → Existing Projects into Workspace*). Il file da caricare
   con STM32CubeProgrammer è `stm32/firmware/FanStm32/Debug/FanStm32.elf`.
-- `J:\PYTHON\RL\FAN_SAC_Controller` e `J:\PYTHON\STM32\PROJECT\FanStm32` sono copie
-  vecchie: non vanno più modificate.
+- Le copie vecchie del progetto sono archiviate in `J:\PYTHON\RL\_archivio` (e
+  `J:\PYTHON\STM32\PROJECT\FanStm32`): non vanno più modificate.
 
 ## Struttura
 
 | Cartella | Contenuto |
 |---|---|
 | `firmware/` | sketch Arduino: ponte PC ↔ ESC + HX711 |
-| `stm32/` | deploy su STM32F407: `rete/` (rete in C ed esportazione), `firmware/FanStm32/` (progetto CubeIDE) |
+| `stm32/` | deploy su STM32F407: `rete/` (rete in C, esportazione, verifica dei pesi), `firmware/FanStm32/` (progetto CubeIDE), `monitor_stm32.py` (prova dal PC), `analizza_prova.py` (metriche e grafici) |
 | `sysid/` | acquisizione dati e analisi per la system identification |
 | `controller/` | ambiente Gymnasium, training, valutazione, controllo sul banco reale |
 | `data/` | dati grezzi: test sysid e prove reali |
@@ -77,7 +79,8 @@ Questa cartella (`J:\PYTHON\RL\fan-sac-controller`) è **l'unica copia viva** de
 4. [Ambiente e training](docs/04_ambiente_e_training.md): osservazioni, azioni, reward, esperimenti A–F
 5. [Prove sul banco reale](docs/05_prove_sul_banco.md): come lanciare una prova in sicurezza
 6. [Lezioni imparate](docs/06_lezioni_imparate.md): problemi incontrati, diagnosi e soluzioni
-7. [Deploy su STM32](docs/07_deploy_stm32.md): rete in C, clock, USB, firmware (in corso)
+7. [Deploy su STM32](docs/07_deploy_stm32.md): rete in C, clock, USB, firmware di controllo, collegamenti
+8. [Report prove STM32](docs/08_prove_stm32.md): la policy F sul chip, 12 V contro 16 V, cambio di riferimento
 
 Appunti in PDF:
 - [Modello fisico e training SAC](docs/appunti/appunti_modello_training_sac.pdf): modello del banco derivato da zero, formulazione RL, teoria del SAC, esperimenti A-F
@@ -92,6 +95,10 @@ cd controller
 python env_fan.py          # training (300k step, ~1.5 h su CPU)
 python valuta.py           # valutazione in simulazione del modello migliore
 python controllo_reale.py  # prova sul banco (Arduino con firmware/banco_sysid_v2)
+
+cd ../stm32
+python monitor_stm32.py COM4                 # prova con la rete sullo STM32 (firmware/FanStm32)
+python analizza_prova.py ../data/prove_reali/F_stm32_16V.csv   # metriche e grafico
 ```
 
 Autore: Matteo Faggian
