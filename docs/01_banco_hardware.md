@@ -10,7 +10,7 @@
 | Corsia inclinabile + carrellino (317 g) | crea il disturbo gravitazionale $m g \sin\theta$ | inclinazione cambiata a mano |
 | Arduino (Uno/Nano) | ponte PC ↔ ESC/HX711 | firmware `banco_sysid_v2.ino` |
 | Alimentatore da banco | alimenta l'ESC | **limite di corrente impostato**: limita la spinta a ~2.2 N |
-| STM32F407VET6 (black board) | futuro controllore stand-alone | ha FPU: esegue la rete da ~68k parametri in ~1 ms |
+| STM32F407VET6 (black board) | controllore stand-alone | ha FPU: esegue la rete da ~68k parametri in 4.18 ms (`-O2`, misurato, [07](07_deploy_stm32.md)) |
 
 ## Cablaggio (Arduino)
 

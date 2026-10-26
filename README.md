@@ -82,6 +82,7 @@ Questa cartella (`J:\PYTHON\RL\fan-sac-controller`) è **l'unica copia viva** de
 7. [Deploy su STM32](docs/07_deploy_stm32.md): rete in C, clock, USB, firmware di controllo, collegamenti
 8. [Report prove STM32](docs/08_prove_stm32.md): la policy F sul chip, 12 V contro 16 V, cambio di riferimento
 9. **[Manuale completo](docs/09_manuale_completo.md)**: teoria + pratica + tutorial per rifare l'esperimento a casa
+10. [Cosa si potrebbe migliorare](docs/10_miglioramenti.md): punti aperti, da quale misura nascono, proposte non ancora provate
 
 Appunti in PDF:
 - [Modello fisico e training SAC](docs/appunti/appunti_modello_training_sac.pdf): modello del banco derivato da zero, formulazione RL, teoria del SAC, esperimenti A-F

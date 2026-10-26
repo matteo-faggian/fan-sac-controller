@@ -5,7 +5,7 @@ Problemi incontrati in ordine cronologico, con sintomo, diagnosi e soluzione.
 ## Scelta del microcontrollore
 **Problema:** l'actor SAC di default (~68k parametri, ~270 KB in float32) non sta sullo STM32
 BluePill (64 KB di flash, Cortex-M3 senza FPU).
-**Soluzione:** STM32F407 (512 KB di flash, Cortex-M4F con FPU): ~1 ms per inferenza, senza
+**Soluzione:** STM32F407 (512 KB di flash, Cortex-M4F con FPU): 4.18 ms per inferenza misurati con `-O2` (vedi sotto), senza
 quantizzazione. Le schede **G0/L0/F0** (Cortex-M0+) non hanno FPU: da evitare per reti in float.
 
 ## HX711 a 10 Hz
